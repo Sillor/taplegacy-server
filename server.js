@@ -1,6 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
@@ -46,14 +47,43 @@ app.post('/api/login', async (req, res) => {
         const [results] = await db.query('SELECT * FROM user_credentials WHERE username = ?', [username]);
         const isValidPassword = results[0] && await bcrypt.compare(password, results[0].password);
 
+        const accessToken = generateAccessToken({ username });
+        const refreshToken = jwt.sign({ username }, process.env.REFRESH_TOKEN_SECRET);
+
         res.json({
             status: isValidPassword ? 'success' : 'error',
             message: isValidPassword ? 'Login successful' : 'Invalid username/password',
+            accessToken: isValidPassword ? accessToken : null,
         });
     } catch (err) {
         handleDatabaseError(res, err);
     }
 });
+
+app.get('/api/users', authenticateToken, async (req, res) => {
+    try {
+        const [results] = await db.query('SELECT * FROM user_credentials WHERE username = ?', [req.user.username]);
+        res.json({ status: 'success', users: results });
+    } catch (err) {
+        handleDatabaseError(res, err);
+    }
+});
+
+function generateAccessToken(user) {
+    return jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '5m' });
+}
+
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token == null) return res.sendStatus(401);
+
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
 
 app.listen(process.env.PORT || 5000, () =>
     console.log(`Server running on port ${process.env.PORT || 5000}`)
