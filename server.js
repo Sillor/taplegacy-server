@@ -41,6 +41,7 @@ app.post('/api/signup', async (req, res) => {
             'INSERT INTO credentials (username, password, date_created, userId) VALUES (?, ?, ?, ?)',
             [username, await bcrypt.hash(password, 10), new Date(), insertId]
         );
+        await db.query('INSERT INTO stats (userId, buttonClicked, upgradesPurchased, maxCps, timeSpent) VALUES (?, 0, 0, 0, 0) ON DUPLICATE KEY UPDATE buttonClicked = 0, upgradesPurchased = 0, maxCps = 0, timeSpent = 0', [insertId]);
         res.json({ status: 'success', message: 'User created' });
     } catch (err) {
         handleDatabaseError(res, err);
@@ -107,6 +108,17 @@ app.put('/api/user/update', authenticateToken, async (req, res) => {
         await db.query('INSERT INTO stats (userId, buttonClicked, upgradesPurchased, maxCps, timeSpent) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE buttonClicked = ?, upgradesPurchased = ?, maxCps = ?, timeSpent = ?', [req.user.userId, buttonClicked, upgradesPurchased, maxCps, timeSpent, buttonClicked, upgradesPurchased, maxCps, timeSpent]);
 
         res.json({ status: 'success', message: 'User updated' });
+    } catch (err) {
+        handleDatabaseError(res, err);
+    }
+});
+
+app.delete('/api/user/data', authenticateToken, async (req, res) => {
+    try {
+        await db.query('UPDATE users SET taps = 0 WHERE id = ?', [req.user.userId]);
+        await db.query('DELETE FROM upgrades WHERE userId = ?', [req.user.userId]);
+        await db.query('INSERT INTO stats (userId, buttonClicked, upgradesPurchased, maxCps, timeSpent) VALUES (?, 0, 0, 0, 0) ON DUPLICATE KEY UPDATE buttonClicked = 0, upgradesPurchased = 0, maxCps = 0, timeSpent = 0', [insertId]);
+        res.json({ status: 'success', message: 'User data deleted' });
     } catch (err) {
         handleDatabaseError(res, err);
     }
