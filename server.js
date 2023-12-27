@@ -129,14 +129,30 @@ app.post('/api/login', async (req, res) => {
         const [[user]] = await db.query('SELECT * FROM credentials WHERE username = ?', [req.body.username]);
         const isValid = user && await bcrypt.compare(req.body.password, user.password);
 
+        const refreshToken = jwt.sign({ userId: user.userId }, process.env.REFRESH_TOKEN_SECRET);
+        await db.query('UPDATE credentials SET refreshToken = ? WHERE userId = ?', [refreshToken, user.userId]);
+
         res.json(isValid ? {
             status: 'success',
             message: 'Login successful',
             accessToken: generateAccessToken({ userId: user.userId }),
+            refreshToken,
         } : {
             status: 'error',
             message: 'Invalid username/password',
         });
+    } catch (err) {
+        handleDatabaseError(res, err);
+    }
+});
+
+app.post('/api/logout', authenticateToken, async (req, res) => {
+    try {
+        // Invalidate the refresh token
+        await db.query('UPDATE credentials SET refreshToken = NULL WHERE userId = ?', [req.user.userId]);
+
+        // Instruct the client to delete the token
+        res.json({ status: 'success', message: 'Logout successful' });
     } catch (err) {
         handleDatabaseError(res, err);
     }
@@ -203,7 +219,7 @@ app.get('/api/protected', authenticateToken, (req, res) => {
 });
 
 function generateAccessToken(user) {
-    return jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '15m' });
+    return jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '5s' });
 }
 
 function authenticateToken(req, res, next) {
@@ -216,6 +232,20 @@ function authenticateToken(req, res, next) {
         next();
     });
 };
+
+app.post('/api/token', async (req, res) => {
+    const refreshToken = req.body.refreshToken;
+    if (refreshToken == null) return res.sendStatus(401);
+
+    const [[user]] = await db.query('SELECT * FROM credentials WHERE refreshToken = ?', [refreshToken]);
+    if (!user) return res.sendStatus(403);
+
+    jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        const accessToken = generateAccessToken({ userId: user.userId });
+        res.json({ accessToken });
+    });
+});
 
 app.listen(process.env.PORT || 5000, () =>
     console.log(`Server running on port ${process.env.PORT || 5000}`)
