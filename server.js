@@ -219,7 +219,7 @@ app.get('/api/protected', authenticateToken, (req, res) => {
 });
 
 function generateAccessToken(user) {
-    return jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '5s' });
+    return jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '15m' });
 }
 
 function authenticateToken(req, res, next) {
@@ -245,6 +245,15 @@ app.post('/api/token', async (req, res) => {
         const accessToken = generateAccessToken({ userId: user.userId });
         res.json({ accessToken });
     });
+});
+
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const [results] = await db.query('SELECT users.taps, credentials.username FROM users JOIN credentials ON users.id = credentials.userId ORDER BY users.taps DESC LIMIT 10');
+        res.json({ status: 'success', data: results });
+    } catch (err) {
+        handleDatabaseError(res, err);
+    }
 });
 
 app.listen(process.env.PORT || 5000, () =>
